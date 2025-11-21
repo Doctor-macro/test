@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>タイマー</title>
+<style>
+  body{
+    background:#fff;
+    color:#000;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;
+    margin:0;
+    padding:0;
+  }
+  header{
+    position:sticky;
+    top:0;
+    background:#fff;
+    border-bottom:2px solid #001f3f;
+    padding:10px;
+    z-index:10;
+  }
+  .toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+  }
+  button{
+    border:2px solid #001f3f;
+    background:#fff;
+    color:#001f3f;
+    border-radius:8px;
+    padding:5px 6px;
+    font-weight:600;
+    cursor:pointer;
+    min-width:50px;
+    font-size:13px;
+  }
+  button:disabled{
+    border-color:#ccc;
+    color:#aaa;
+    cursor:not-allowed;
+  }
+  .btn-blue{
+    background:#007BFF;
+    border-color:#007BFF;
+    color:#fff;
+  }
+  .list{
+    display:grid;
+    grid-auto-flow:column;
+    grid-auto-columns:min-content;
+    gap:16px;
+    padding:16px;
+  }
+  .column{
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  .timer{
+    border:2px solid #001f3f;
+    border-radius:10px;
+    padding:10px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    width:300px;
+    background:#fff;
+  }
+  .timer input[type=text]{
+    border:1px solid #001f3f;
+    border-radius:6px;
+    padding:3px;
+    width:100%;
+    font-size:15px;
+  }
+  .timer.done{
+    border-color:#ff9800;
+    background:#fff7e0;
+  }
+  .time{
+    font-variant-numeric:tabular-nums;
+    font-size:34px;
+    font-weight:800;
+    text-align:center;
+    margin:10px 0;
+  }
+  .presets{
+    display:flex;
+    justify-content:center;
+    gap:6px;
+    flex-wrap:nowrap;
+  }
+  .progress{
+    width:100%;
+    height:10px;
+    background:#eee;
+    border:1px solid #001f3f;
+    border-radius:5px;
+    overflow:hidden;
+  }
+  .bar{
+    height:100%;
+    width:0;
+    background:#001f3f;
+    transition:width .3s;
+  }
+  /* --- 完了モーダル --- */
+  .modal{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.5);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:999;
+  }
+  .modal-inner{
+    background:#fff;
+    padding:20px;
+    border-radius:10px;
+    max-width:400px;
+    width:90%;
+    text-align:center;
+  }
+  .modal-inner h3{
+    margin-top:0;
+  }
+  .modal-buttons{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-top:15px;
+  }
+
+  /* グループ一覧の見た目 */
+  #groupView{
+    padding:16px;
+  }
+  #groupList{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-top:8px;
+  }
+  .group-row{
+    border:1px solid #001f3f;
+    border-radius:8px;
+    padding:8px 10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+  }
+  .group-row-name{
+    font-weight:600;
+  }
+  .group-row-buttons{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="toolbar">
+    <button id="backToGroups" style="display:none">← グループ一覧</button>
+    <button id="createGroup" class="btn-blue">＋ グループ作成</button>
+    <button id="addTimer" class="btn-blue">＋ 新規タイマー</button>
+    <button id="exportCsv">CSV書き出し</button>
+    <button id="importCsvBtn">CSV読み込み</button>
+    <button id="enableSound" class="btn-blue">音を有効化/テスト</button>
+    <input type="file" id="importCsvInput" accept=".csv" style="display:none">
+  </div>
+</header>
+
+<main>
+  <!-- グループ選択画面 -->
+  <div id="groupView">
+    <h2>グループ一覧</h2>
+    <p style="margin:4px 0 8px 0;font-size:13px;color:#555;">
+      グループごとにタイマーが完全に分かれて共有されます。
+      参加したいグループを選ぶか、新しく作成してください。
+    </p>
+    <div id="groupList"></div>
+  </div>
+
+  <!-- タイマー画面 -->
+  <div id="timerView" style="display:none">
+    <h2 id="groupTitle" style="margin:8px 16px;"></h2>
+    <div class="list" id="list"></div>
+  </div>
+</main>
+
+<!-- 完了モーダル -->
+<div id="doneModal" class="modal">
+  <div class="modal-inner">
+    <h3>タイマー完了</h3>
+    <p>以下のタイマーが完了しました：</p>
+    <ul id="doneList"></ul>
+    <div class="modal-buttons">
+      <button id="doneStop">音を止める</button>
+      <button id="doneOk" class="btn-blue">OK</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import {
+    initializeApp
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import {
+    getDatabase,
+    ref,
+    set,
+    onValue,
+    push,
+    update,
+    remove
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  // ==========================
+  // Firebase 初期化
+  // ==========================
+  const firebaseConfig = {
+    apiKey: "AIzaSyCSIIPz6Q8RRH1ijLcU-SD74IWk10lt2Uk",
+    authDomain: "multi-timer-share.firebaseapp.com",
+    projectId: "multi-timer-share",
+    storageBucket: "multi-timer-share.firebasestorage.app",
+    messagingSenderId: "619054972489",
+    appId: "1:619054972489:web:ee1a5ad15da335f2e68998",
+    databaseURL: "https://multi-timer-share-default-rtdb.asia-southeast1.firebasedatabase.app"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  // ==========================
+  // DOM 参照
+  // ==========================
+  const list = document.getElementById("list");
+  const addBtn = document.getElementById("addTimer");
+  const exportBtn = document.getElementById("exportCsv");
+  const importBtn = document.getElementById("importCsvBtn");
+  const importInput = document.getElementById("importCsvInput");
+  const enableSoundBtn = document.getElementById("enableSound");
+
+  const doneModal = document.getElementById("doneModal");
+  const doneList = document.getElementById("doneList");
+  const doneStop = document.getElementById("doneStop");
+  const doneOk = document.getElementById("doneOk");
+
+  const groupView = document.getElementById("groupView");
+  const timerView = document.getElementById("timerView");
+  const groupListEl = document.getElementById("groupList");
+  const groupTitleEl = document.getElementById("groupTitle");
+  const createGroupBtn = document.getElementById("createGroup");
+  const backToGroupsBtn = document.getElementById("backToGroups");
+
+  // ==========================
+  // 状態
+  // ==========================
+  let groups = {};              // /groups の中身
+  let currentGroupId = null;    // 今入っているグループID
+
+  let timers = {};              // 今のグループ内の /timers
+  let timersUnsub = null;       // onValue の解除用関数
+
+  let audioCtx = null;
+  let beepInterval = null;
+  let unlocked = false;
+
+  let pendingCompletedIds = []; // モーダルに未表示の完了タイマーID
+
+  // ==========================
+  // 共通ユーティリティ
+  // ==========================
+  function ensureAudio(){
+    if(!audioCtx){
+      try{
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }catch(e){}
+    }else if(audioCtx.state === 'suspended'){
+      audioCtx.resume();
+    }
+    unlocked = !!audioCtx;
+    return audioCtx;
+  }
+
+  function beepPatternOnce(){
+    const ctx = ensureAudio();
+    if(!ctx) return;
+    const base = ctx.currentTime;
+    const pattern = [1200,1200,1200];
+    pattern.forEach((f,i)=>{
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'square';
+      o.frequency.setValueAtTime(f, base + i*0.16);
+      g.gain.setValueAtTime(0.001, base + i*0.16);
+      g.gain.exponentialRampToValueAtTime(0.16, base + i*0.17);
+      g.gain.exponentialRampToValueAtTime(0.0001, base + i*0.28);
+      o.connect(g).connect(ctx.destination);
+      o.start(base + i*0.16);
+      o.stop(base + i*0.3);
+    });
+  }
+
+  function startRepeatingBeep(){
+    stopRepeatingBeep();
+    beepPatternOnce();
+    beepInterval = setInterval(beepPatternOnce, 1200);
+  }
+
+  function stopRepeatingBeep(){
+    if(beepInterval){
+      clearInterval(beepInterval);
+      beepInterval = null;
+    }
+  }
+
+  enableSoundBtn.addEventListener('click', ()=>{
+    ensureAudio();
+    beepPatternOnce();
+  });
+
+  function logEvent(action, detail=""){
+    const ts = new Date().toISOString();
+    const entry = { action, detail, timestamp: ts };
+    push(ref(db,'logs'), entry);
+  }
+
+  function fmt(sec){
+    const h = Math.floor(sec/3600);
+    const m = Math.floor((sec%3600)/60);
+    const s = sec%60;
+    return (
+      String(h).padStart(2,'0') + ':' +
+      String(m).padStart(2,'0') + ':' +
+      String(s).padStart(2,'0')
+    );
+  }
+
+  function parseDuration(text){
+    if (!text) return null;
+    const t = text.trim();
+    const hh = t.match(/(\d+)h/i);
+    const mm = t.match(/(\d+)m/i);
+    const ss = t.match(/(\d+)s/i);
+    let sec = 0;
+    if (hh) sec += parseInt(hh[1], 10) * 3600;
+    if (mm) sec += parseInt(mm[1], 10) * 60;
+    if (ss) sec += parseInt(ss[1], 10);
+    if (!hh && !mm && !ss) {
+      const num = parseInt(t, 10);
+      if (!isNaN(num)) sec = num;
+    }
+    return sec > 0 ? sec : null;
+  }
+
+  function getRemain(t, now){
+    if (t.running && t.startTime && typeof t.total === "number") {
+      const elapsed = Math.floor((now - t.startTime) / 1000);
+      return Math.max(0, t.total - elapsed);
+    }
+    if (typeof t.remain === "number") {
+      return t.remain;
+    }
+    return 0;
+  }
+
+  function updateModeUI(){
+    if(currentGroupId){
+      groupView.style.display = 'none';
+      timerView.style.display = 'block';
+      backToGroupsBtn.style.display = 'inline-block';
+      const g = groups[currentGroupId];
+      groupTitleEl.textContent = g ? `グループ: ${g.name || '(名称未設定)'}` : 'グループ';
+    }else{
+      groupView.style.display = 'block';
+      timerView.style.display = 'none';
+      backToGroupsBtn.style.display = 'none';
+      groupTitleEl.textContent = '';
+      list.innerHTML = '';
+    }
+  }
+
+  // ==========================
+  // グループ関連
+  // ==========================
+  function renderGroups(){
+    groupListEl.innerHTML = '';
+    const entries = Object.entries(groups || {});
+
+    if(entries.length === 0){
+      const p = document.createElement('p');
+      p.textContent = 'グループがまだありません。「＋ グループ作成」で新しく作成してください。';
+      p.style.fontSize = '13px';
+      p.style.color = '#666';
+      groupListEl.appendChild(p);
+      return;
+    }
+
+    entries.forEach(([id, g])=>{
+      const row = document.createElement('div');
+      row.className = 'group-row';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'group-row-name';
+      nameSpan.textContent = g.name || '(名称未設定)';
+
+      const btns = document.createElement('div');
+      btns.className = 'group-row-buttons';
+
+      const enterBtn = document.createElement('button');
+      enterBtn.textContent = '入室';
+      enterBtn.className = 'btn-blue';
+      enterBtn.addEventListener('click', ()=>enterGroup(id));
+
+      const renameBtn = document.createElement('button');
+      renameBtn.textContent = '名前変更';
+      renameBtn.addEventListener('click', ()=>{
+        const current = g.name || '';
+        const v = prompt('グループ名を入力してください', current);
+        if(v === null) return;
+        const name = v.trim() || '名称未設定';
+        update(ref(db, 'groups/' + id), { name });
+      });
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = '削除';
+      deleteBtn.addEventListener('click', ()=>{
+        if(!confirm('このグループを削除しますか？\n（グループ内の全タイマーも削除されます）')) return;
+        remove(ref(db, 'groups/' + id));
+        if(currentGroupId === id){
+          leaveGroup();
+        }
+      });
+
+      btns.appendChild(enterBtn);
+      btns.appendChild(renameBtn);
+      btns.appendChild(deleteBtn);
+
+      row.appendChild(nameSpan);
+      row.appendChild(btns);
+      groupListEl.appendChild(row);
+    });
+  }
+
+  function createGroup(){
+    const v = prompt('グループ名を入力してください', '');
+    if(v === null) return;
+    const name = v.trim() || '名称未設定';
+    const gRef = push(ref(db, 'groups'));
+    const id = gRef.key;
+    set(gRef, { name });
+    // すぐにそのグループに入室したいなら↓を有効に
+    // enterGroup(id);
+  }
+
+  function enterGroup(groupId){
+    currentGroupId = groupId;
+    attachTimersListener();
+    updateModeUI();
+  }
+
+  function leaveGroup(){
+    detachTimersListener();
+    currentGroupId = null;
+    timers = {};
+    pendingCompletedIds = [];
+    doneModal.style.display = 'none';
+    doneList.innerHTML = '';
+    updateModeUI();
+  }
+
+  createGroupBtn.addEventListener('click', createGroup);
+  backToGroupsBtn.addEventListener('click', leaveGroup);
+
+  // groups を購読（軽いので常に）
+  onValue(ref(db, 'groups'), snap => {
+    groups = snap.val() || {};
+    renderGroups();
+    // 今いるグループが消されたら一覧に戻す
+    if(currentGroupId && !groups[currentGroupId]){
+      leaveGroup();
+    }else{
+      updateModeUI();
+    }
+  });
+
+  // ==========================
+  // タイマー関連（1グループ分）
+  // ==========================
+  function attachTimersListener(){
+    if(!currentGroupId) return;
+    if(timersUnsub){ timersUnsub(); timersUnsub = null; }
+
+    const r = ref(db, `groups/${currentGroupId}/timers`);
+    timersUnsub = onValue(r, snap => {
+      timers = snap.val() || {};
+      renderTimers();
+    });
+  }
+
+  function detachTimersListener(){
+    if(timersUnsub){
+      timersUnsub();
+      timersUnsub = null;
+    }
+  }
+
+  function timerRef(groupId, timerId){
+    return ref(db, `groups/${groupId}/timers/${timerId}`);
+  }
+
+  function renderTimers(){
+    list.innerHTML = '';
+    const arr = Object.values(timers);
+    const perCol = 3;
+    const cols = Math.ceil(arr.length / perCol);
+    for(let c = 0; c < cols; c++){
+      const col = document.createElement('div');
+      col.className = 'column';
+      arr.slice(c * perCol, c * perCol + perCol)
+         .forEach(t => {
+           const el = renderTimer(t);
+           if (t.done) {
+             el.classList.add('done');
+           }
+           col.appendChild(el);
+         });
+      list.appendChild(col);
+    }
+    updateBars();
+  }
+
+  function renderTimer(t){
+    const d = document.createElement('div');
+    d.className='timer';
+    d.dataset.id = t.id;
+
+    d.innerHTML = `
+      <input type="text" class="js-name" value="${t.name}">
+      <div class="time js-time">${fmt(t.remain)}</div>
+      <div class="presets">
+        ${[['+1h',3600],['+10min',600],['+5min',300],['+1min',60]]
+          .map(([l,s])=>`<button class='btn-blue js-extend' data-sec='${s}'>${l}</button>`).join('')}
+      </div>
+      <div class="presets">
+        ${[['+10sec',10],['+5sec',5],['+1sec',1]]
+          .map(([l,s])=>`<button class='btn-blue js-extend' data-sec='${s}'>${l}</button>`).join('')}
+        <button class='js-reset'>再設定</button>
+      </div>
+      <div class="progress"><div class="bar js-bar"></div></div>
+      <div class="presets">
+        <button class='js-start'>Start</button>
+        <button class='js-pause'>Pause</button>
+        <button class='js-reset2'>Reset</button>
+        <button class='js-delete'>Delete</button>
+      </div>`;
+
+    d.querySelector('.js-name').addEventListener('change', e => {
+      clearTimerDone(t.id);
+      updateTimer(t.id, { name: e.target.value });
+    });
+    d.querySelectorAll('.js-extend').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        extendTimer(t.id, Number(b.dataset.sec));
+      });
+    });
+    d.querySelector('.js-reset').addEventListener('click', ()=>resetTimer(t.id,true));
+    d.querySelector('.js-reset2').addEventListener('click', ()=>resetTimer(t.id,false));
+    d.querySelector('.js-start').addEventListener('click', ()=>startTimer(t.id));
+    d.querySelector('.js-pause').addEventListener('click', ()=>pauseTimer(t.id));
+    d.querySelector('.js-delete').addEventListener('click', ()=>deleteTimer(t.id));
+    return d;
+  }
+
+  function updateBars(){
+    document.querySelectorAll('.timer').forEach(box=>{
+      const id = box.dataset.id;
+      const t = timers[id];
+      if(!t) return;
+      box.querySelector('.js-time').textContent = fmt(t.remain);
+      const bar = box.querySelector('.js-bar');
+      const pct = t.total>0 ? Math.max(0,Math.min(100,(1-(t.remain/t.total))*100)) : 0;
+      bar.style.width = pct + '%';
+      box.querySelectorAll('.js-extend').forEach(b=>b.disabled = t.running);
+    });
+  }
+
+  function markTimerDone(id){
+    const el = document.querySelector(`.timer[data-id="${id}"]`);
+    if(el) el.classList.add('done');
+    if(currentGroupId){
+      update(timerRef(currentGroupId, id), { done:true });
+    }
+  }
+
+  function clearTimerDone(id){
+    const el = document.querySelector(`.timer[data-id="${id}"]`);
+    if(el) el.classList.remove('done');
+    if(currentGroupId){
+      update(timerRef(currentGroupId, id), { done:false });
+    }
+  }
+
+  function newTimerObj(sec){
+    const baseRef = ref(db, `groups/${currentGroupId}/timers`);
+    const id = push(baseRef).key;
+    return {
+      id,
+      name:'タイマー',
+      total:sec,
+      remain:sec,
+      running:false,
+      startTime:null,
+      lastUpdate:Date.now(),
+      initial:sec,
+      done:false
+    };
+  }
+
+  function addTimer(){
+    if(!currentGroupId){
+      alert('まずグループに入室してください。');
+      return;
+    }
+    const v = prompt('タイマー時間を入力 (例: 1h, 3m, 90s, 120)');
+    if(v === null) return;
+    const sec = parseDuration(v);
+    if(!sec){
+      alert('正しい値を入力してください');
+      return;
+    }
+    const t = newTimerObj(sec);
+    set(timerRef(currentGroupId, t.id), t);
+    logEvent('Create', `${t.name} total=${t.total}s`);
+  }
+
+  function importFromCsv(text){
+    if(!currentGroupId){
+      alert('まずグループに入室してください。');
+      return;
+    }
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+    if (!lines.length) return;
+    let startIndex = 0;
+    const headerLower = lines[0].toLowerCase();
+    if (headerLower.includes("name") && (headerLower.includes("duration") || headerLower.includes("time"))) {
+      startIndex = 1;
+    }
+    for (let i = startIndex; i < lines.length; i++) {
+      const cols = lines[i].split(",");
+      if (!cols.length) continue;
+      const name = cols[0].trim();
+      const durStr = (cols[1] || "").trim();
+      const sec = parseDuration(durStr);
+      if (!sec) continue;
+      const t = newTimerObj(sec);
+      if (name) t.name = name;
+      set(timerRef(currentGroupId, t.id), t);
+      logEvent("Import", (t.name || "タイマー") + " " + sec + "s");
+    }
+  }
+
+  function updateTimer(id, data){
+    if(!currentGroupId) return;
+    update(timerRef(currentGroupId, id), data);
+  }
+
+  function extendTimer(id, sec){
+    if(!currentGroupId) return;
+    clearTimerDone(id);
+    const t = timers[id];
+    if (!t || t.running) return;
+    updateTimer(id, { remain: t.remain + sec, total: t.total + sec });
+    logEvent('Extend', `${t.name} +${sec}s`);
+  }
+
+  function resetTimer(id, toZero){
+    if(!currentGroupId) return;
+    clearTimerDone(id);
+    const t = timers[id];
+    if (!t) return;
+    const newRemain = toZero ? 0 : t.initial;
+    updateTimer(id, { remain: newRemain, running:false, lastUpdate: Date.now() });
+    logEvent('Reset', t.name);
+  }
+
+  function startTimer(id){
+    if(!currentGroupId) return;
+    clearTimerDone(id);
+    const t = timers[id];
+    if (!t || t.running) return;
+    updateTimer(id, {
+      running:true,
+      startTime: Date.now(),
+      lastUpdate: Date.now(),
+      total: t.remain
+    });
+    logEvent('Start', t.name);
+  }
+
+  function pauseTimer(id){
+    if(!currentGroupId) return;
+    clearTimerDone(id);
+    const t = timers[id];
+    if (!t || !t.running) return;
+    updateTimer(id, { running:false, lastUpdate: Date.now(), total: t.remain });
+    logEvent('Pause', t.name);
+  }
+
+  function deleteTimer(id){
+    if(!currentGroupId) return;
+    clearTimerDone(id);
+    if (!confirm('削除しますか？')) return;
+    remove(timerRef(currentGroupId, id));
+    logEvent('Delete', id);
+  }
+
+  // ==========================
+  // タイマー進行ループ
+  // ==========================
+  setInterval(()=>{
+    if(!currentGroupId) return;  // グループ入室前は何もしない
+
+    const now = Date.now();
+    const newCompletedIds = [];
+    Object.values(timers).forEach(t=>{
+      if(t.running && t.startTime){
+        const elapsed = Math.floor((now - t.startTime) / 1000);
+        const remain = Math.max(0, t.total - elapsed);
+        t.remain = remain;
+        if(remain === 0 && t.running){
+          update(timerRef(currentGroupId, t.id), {
+            running:false,
+            done:true
+          });
+          newCompletedIds.push(t.id);
+        }
+      }
+    });
+
+    if(newCompletedIds.length){
+      newCompletedIds.forEach(id => {
+        markTimerDone(id);
+      });
+      newCompletedIds.forEach(id => {
+        if (!pendingCompletedIds.includes(id)) {
+          pendingCompletedIds.push(id);
+        }
+      });
+      doneList.innerHTML = pendingCompletedIds
+        .map(id => {
+          const tt = timers[id];
+          return `<li>${tt ? (tt.name || 'タイマー') : 'タイマー'}</li>`;
+        })
+        .join('');
+      doneModal.style.display='flex';
+      if(unlocked) startRepeatingBeep();
+    }
+
+    updateBars();
+  }, 1000);
+
+  // ==========================
+  // モーダルボタン / CSV / Import
+  // ==========================
+  doneStop.addEventListener('click', ()=>stopRepeatingBeep());
+  doneOk.addEventListener("click", () => {
+    stopRepeatingBeep();
+    doneModal.style.display = "none";
+    pendingCompletedIds = [];
+    doneList.innerHTML = "";
+  });
+
+  addBtn.addEventListener("click", addTimer);
+
+  exportBtn.addEventListener("click", () => {
+    if(!currentGroupId){
+      alert('まずグループに入室してください。');
+      return;
+    }
+    const head = "timestamp,timer_name,remain_seconds,total_seconds\n";
+    const rows = Object.values(timers)
+      .map((t) => {
+        const now = Date.now();
+        const remain = getRemain(t, now);
+        const total = typeof t.total === "number" ? t.total : remain;
+        return (
+          new Date().toISOString() +
+          "," +
+          (t.name || "タイマー") +
+          "," +
+          remain +
+          "," +
+          total
+        );
+      })
+      .join("\n");
+    const blob = new Blob([head + rows], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "timers.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  importBtn.addEventListener("click", () => {
+    if(!currentGroupId){
+      alert('まずグループに入室してください。');
+      return;
+    }
+    importInput.value = "";
+    importInput.click();
+  });
+
+  importInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target && typeof ev.target.result === "string" ? ev.target.result : "";
+      if (text) importFromCsv(text);
+    };
+    reader.readAsText(file);
+  });
+
+  // 初期表示はグループ一覧
+  updateModeUI();
+</script>
+</body>
+</html>
