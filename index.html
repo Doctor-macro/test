@@ -315,16 +315,25 @@
     if(!currentGroupId){
       // グループ一覧画面
       toolbar.innerHTML = `<button id="addGroup" class="btn-blue">＋ グループ作成</button>`;
-      const addGroupBtn = document.getElementById("addGroup");
-      addGroupBtn.addEventListener("click", createGroup);
+      document.getElementById("addGroup").addEventListener("click", createGroup);
     }else{
-      // グループのタイマー画面
+      // タイマー画面（グループ内）
       toolbar.innerHTML = `
+        <button id="goBack" class="btn-blue">← グループ一覧へ</button>
         <button id="addTimer" class="btn-blue">＋ 新規タイマー</button>
         <button id="exportCsv">CSV書き出し</button>
         <button id="importCsvBtn">CSV読み込み</button>
         <button id="enableSound" class="btn-blue">音を有効化/テスト</button>
       `;
+  
+      // 戻るボタンの処理
+      document.getElementById("goBack").addEventListener("click", () => {
+        // URLから group パラメータを削除
+        const p = new URLSearchParams(location.search);
+        p.delete("group");
+        location.search = p.toString();
+      });
+  
       document.getElementById("addTimer").addEventListener("click", addTimer);
       document.getElementById("exportCsv").addEventListener("click", exportCsv);
       document.getElementById("importCsvBtn").addEventListener("click", () => {
@@ -337,6 +346,7 @@
       });
     }
   }
+
 
   function renderLayout(){
     if(!currentGroupId){
