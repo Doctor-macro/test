@@ -210,15 +210,17 @@
   import { getDatabase, ref, set, onValue, push, update, remove } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
   // ========= Firebase 初期化 =========
+  // test用ページでは、こっちのconfigを使う
   const firebaseConfig = {
-    apiKey: "AIzaSyCSIIPz6Q8RRH1ijLcU-SD74IWk10lt2Uk",
-    authDomain: "multi-timer-share.firebaseapp.com",
-    projectId: "multi-timer-share",
-    storageBucket: "multi-timer-share.firebasestorage.app",
-    messagingSenderId: "619054972489",
-    appId: "1:619054972489:web:ee1a5ad15da335f2e68998",
-    databaseURL: "https://multi-timer-share-default-rtdb.asia-southeast1.firebasedatabase.app"
+    apiKey: "TEST_......",
+    authDomain: "test-xxxxx.firebaseapp.com",
+    databaseURL: "https://test-xxxxx-default-rtdb.XXXXX.firebasedatabase.app",
+    projectId: "test-xxxxx",
+    storageBucket: "test-xxxxx.appspot.com",
+    messagingSenderId: "......",
+    appId: "......"
   };
+
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
